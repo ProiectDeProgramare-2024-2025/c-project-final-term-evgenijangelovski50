@@ -1,0 +1,272 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+
+#define FILENAME "sistemgaleriefotoFINAL.dat"
+#define INIT_CAPACITY 5
+#define COLOR_NAME "\e[1;36m"
+#define COLOR_SIZE "\e[0;33m"
+#define COLOR_SUCCESS "\e[0;32m"
+#define COLOR_ERROR "\e[0;31m"
+#define COLOR_RESET "\e[0m"
+
+typedef struct {
+    char nume[100];
+    int dimensiune;
+} Fotografie;
+
+typedef struct {
+    char nume[100];
+    Fotografie* fotografii;
+    int nrFotografii;
+    int capacitate;
+    long total_size;
+} Album;
+
+Album** albume = NULL;
+int nrAlbume = 0;
+int capacitateAlbume = 0;
+
+void clear_input() {
+    int c;
+    while ((c = getchar()) != '\n' && c != EOF);
+}
+
+void print_error(const char* message) {
+    printf(COLOR_ERROR "%s" COLOR_RESET, message);
+}
+
+void print_success(const char* message) {
+    printf(COLOR_SUCCESS "%s" COLOR_RESET, message);
+}
+
+int get_valid_int(const char* prompt, int min, int max) {
+    int value;
+    while(1) {
+        printf("%s (%d-%d): ", prompt, min, max);
+        if(scanf("%d", &value) == 1 && value >= min && value <= max) {
+            clear_input();
+            return value;
+        }
+        clear_input();
+        print_error("Introduceti un numar valid!\n");
+    }
+}
+
+void get_valid_string(const char* prompt, char* buffer, int max_length) {
+    while(1) {
+        printf("%s: ", prompt);
+        fgets(buffer, max_length, stdin);
+        buffer[strcspn(buffer, "\n")] = '\0';
+
+        if(strlen(buffer) > 0 && strlen(buffer) < max_length) {
+            return;
+        }
+        printf("Introduceti un text valid (1-%d caractere)!\n", max_length-1);
+    }
+}
+
+void salvare_date() {
+    FILE* f = fopen(FILENAME, "wb");
+    if (!f) {
+        print_error("Eroare la salvarea datelor!\n");
+        return;
+    }
+
+    fwrite(&nrAlbume, sizeof(int), 1, f);
+    for (int i = 0; i < nrAlbume; i++) {
+        Album* a = albume[i];
+        int len = strlen(a->nume) + 1;
+        fwrite(&len, sizeof(int), 1, f);
+        fwrite(a->nume, sizeof(char), len, f);
+        fwrite(&a->nrFotografii, sizeof(int), 1, f);
+        fwrite(a->fotografii, sizeof(Fotografie), a->nrFotografii, f);
+    }
+    fclose(f);
+    print_success("Date salvate cu succes!\n");
+}
+
+void incarcare_date() {
+    FILE* f = fopen(FILENAME, "rb");
+    if (!f) return;
+
+    fread(&nrAlbume, sizeof(int), 1, f);
+    albume = realloc(albume, nrAlbume * sizeof(Album*));
+
+    for (int i = 0; i < nrAlbume; i++) {
+        Album* a = malloc(sizeof(Album));
+        int len;
+        fread(&len, sizeof(int), 1, f);
+        fread(a->nume, sizeof(char), len, f);
+        fread(&a->nrFotografii, sizeof(int), 1, f);
+        a->capacitate = a->nrFotografii;
+        a->fotografii = malloc(a->capacitate * sizeof(Fotografie));
+        fread(a->fotografii, sizeof(Fotografie), a->nrFotografii, f);
+        albume[i] = a;
+    }
+    fclose(f);
+}
+
+void adauga_album() {
+    char nume[100];
+    get_valid_string("Nume album", nume, sizeof(nume));
+
+    if (nrAlbume >= capacitateAlbume) {
+        capacitateAlbume += INIT_CAPACITY;
+        albume = realloc(albume, capacitateAlbume * sizeof(Album*));
+    }
+
+    Album* nou = malloc(sizeof(Album));
+    strncpy(nou->nume, nume, sizeof(nou->nume));
+    nou->fotografii = NULL;
+    nou->nrFotografii = 0;
+    nou->capacitate = 0;
+    nou->total_size = 0;
+
+    albume[nrAlbume++] = nou;
+    printf(COLOR_SUCCESS "Album creat: " COLOR_NAME "%s" COLOR_RESET "\n", nume);
+}
+
+void sterge_album(int index) {
+    if (index < 0 || index >= nrAlbume) {
+        print_error("Index invalid!\n");
+        return;
+    }
+
+    Album* album = albume[index];
+    free(album->fotografii);
+    free(album);
+
+    for (int i = index; i < nrAlbume - 1; i++) {
+        albume[i] = albume[i + 1];
+    }
+    nrAlbume--;
+    print_success("Album sters cu succes!\n");
+}
+
+void adauga_fotografie(int index) {
+    if (index < 0 || index >= nrAlbume) return;
+
+    Album* a = albume[index];
+    if (a->nrFotografii >= a->capacitate) {
+        a->capacitate += INIT_CAPACITY;
+        a->fotografii = realloc(a->fotografii, a->capacitate * sizeof(Fotografie));
+    }
+
+    Fotografie f;
+    get_valid_string("Nume fotografie", f.nume, sizeof(f.nume));
+    f.dimensiune = get_valid_int("Dimensiune (KB)", 1, 10000);
+
+    a->fotografii[a->nrFotografii++] = f;
+    a->total_size += f.dimensiune * 1024L;
+    printf(COLOR_SUCCESS "Fotografie adaugata: " COLOR_NAME "%s" COLOR_RESET "\n", f.nume);
+}
+
+void sterge_fotografie(int album_index, int foto_index) {
+    if (album_index < 0 || album_index >= nrAlbume) {
+        print_error("Album invalid!\n");
+        return;
+    }
+
+    Album* album = albume[album_index];
+    if (foto_index < 0 || foto_index >= album->nrFotografii) {
+        print_error("Index foto invalid!\n");
+        return;
+    }
+
+    printf(COLOR_SUCCESS "Steergere fotografie: " COLOR_NAME "%s" COLOR_RESET "\n",
+           album->fotografii[foto_index].nume);
+
+    album->total_size -= album->fotografii[foto_index].dimensiune * 1024L;
+    for (int i = foto_index; i < album->nrFotografii - 1; i++) {
+        album->fotografii[i] = album->fotografii[i + 1];
+    }
+    album->nrFotografii--;
+}
+
+void afisare_albume() {
+    printf("\n=== " COLOR_NAME "Albume disponibile" COLOR_RESET " ===\n");
+    for (int i = 0; i < nrAlbume; i++) {
+        Album* a = albume[i];
+        printf("%d. " COLOR_NAME "%s" COLOR_RESET " (%d foto, " COLOR_SIZE "%.2f MB" COLOR_RESET ")\n",
+               i+1, a->nume, a->nrFotografii,
+               a->total_size / (1024.0 * 1024.0));
+    }
+}
+
+void meniu_principal() {
+    printf("\n>>> " COLOR_NAME "(: Bine ati venit in galeria foto dumneavoastra! :)" COLOR_RESET " <<<\n");
+    printf("1. Creaza album nou\n");
+    printf("2. Adauga fotografie\n");
+    printf("3. Vezi albume\n");
+    printf("4. Sterge album\n");
+    printf("5. Sterge fotografie\n");
+    printf("6. Salvare si iesire\n");
+    printf("Alege optiunea: ");
+}
+
+int main() {
+    incarcare_date();
+    int optiune;
+
+    do {
+        meniu_principal();
+        optiune = get_valid_int("", 1, 6);
+
+        switch(optiune) {
+            case 1:
+                adauga_album();
+                break;
+
+            case 2:
+                afisare_albume();
+                if(nrAlbume > 0) {
+                    int index = get_valid_int("Selectati album", 1, nrAlbume) - 1;
+                    adauga_fotografie(index);
+                }
+                break;
+
+            case 3:
+                afisare_albume();
+                break;
+
+            case 4:
+                afisare_albume();
+                if(nrAlbume > 0) {
+                    int index = get_valid_int("Selectati album de sters", 1, nrAlbume) - 1;
+                    sterge_album(index);
+                }
+                break;
+
+            case 5:
+                afisare_albume();
+                if(nrAlbume > 0) {
+                    int album_index = get_valid_int("Selectati album", 1, nrAlbume) - 1;
+                    Album* album = albume[album_index];
+
+                    if(album->nrFotografii > 0) {
+                        printf("Fotografii in " COLOR_NAME "%s" COLOR_RESET ":\n", album->nume);
+                        for(int i = 0; i < album->nrFotografii; i++) {
+                            printf("%d. " COLOR_NAME "%s" COLOR_RESET " (" COLOR_SIZE "%d KB" COLOR_RESET ")\n",
+                                  i+1, album->fotografii[i].nume, album->fotografii[i].dimensiune);
+                        }
+                        int foto_index = get_valid_int("Selectati fotografie de sters", 1, album->nrFotografii) - 1;
+                        sterge_fotografie(album_index, foto_index);
+                    }
+                }
+                break;
+
+            case 6:
+                salvare_date();
+                break;
+        }
+    } while(optiune != 6);
+
+    for (int i = 0; i < nrAlbume; i++) {
+        free(albume[i]->fotografii);
+        free(albume[i]);
+    }
+    free(albume);
+    return 0;
+}
